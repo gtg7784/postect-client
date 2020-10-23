@@ -1,10 +1,10 @@
 import * as posenet from '@tensorflow-models/posenet';
 import { Keypoint } from '@tensorflow-models/posenet';
 
-interface coordinate {
-  x: number;
+type Vector2D = {
   y: number;
-}
+  x: number;
+};
 
 const isAndroid = () => /Android/i.test(navigator.userAgent);
 
@@ -24,7 +24,7 @@ export const drawKeypoints = (keypoints: any, minConfidence: number, skeletonCol
     })
 }
 
-const toTuple = ({y, x}: coordinate) => [y, x]
+const toTuple = ({y, x}: Vector2D): [number, number] => [y, x]
 
 const drawSegment = ([ay, ax]: [number, number], [by, bx]: [number, number], color: string | CanvasGradient | CanvasPattern, lineWidth: number, scale: number, ctx: CanvasRenderingContext2D) => {
   ctx.beginPath()

@@ -1,5 +1,6 @@
 import React, { Component } from 'react'
 import * as posenet from '@tensorflow-models/posenet'
+import * as tf from '@tensorflow/tfjs-core'
 import { ModelConfig, Pose } from '@tensorflow-models/posenet';
 import { isMobile, drawKeypoints, drawSkeleton } from './utils'
 
@@ -27,13 +28,20 @@ interface State {
   loading: boolean;
 }
 
-export default class PoseNet extends Component<Props, State> {
+type PosenetInput = ImageData | HTMLImageElement | HTMLCanvasElement | HTMLVideoElement | tf.Tensor3D;
+
+class PoseNet extends Component<Props, State> {
   static defaultProps = {
     videoWidth: 600,
     videoHeight: 500,
-    flipHorizontal: true,
+    flipHorizontal: false,
     algorithm: 'single-pose',
-    mobileNetArchitecture: isMobile() ? 0.50 : 1.01,
+    mobileNetArchitecture: {
+      architecture: 'ResNet50',
+      outputStride: 32,
+      inputResolution: {width: 500, height: 500},
+      multiplier: isMobile() ? 0.50 : 1.0,
+    },
     showVideo: true,
     showSkeleton: true,
     showPoints: true,
@@ -47,15 +55,19 @@ export default class PoseNet extends Component<Props, State> {
     skeletonLineWidth: 2,
     loadingText: 'load posenet'
   }
-  net: posenet.PoseNet;
-  canvas: HTMLCanvasElement;
-  video: HTMLVideoElement | CanvasImageSource | ImageBitmap;
+  net: posenet.PoseNet | null;
+  canvas: HTMLCanvasElement | null;
+  video: HTMLMediaElement | null;
 
   constructor(props: Props) {
     super(props, PoseNet.defaultProps);
     this.state = {
       loading: true
     }
+
+    this.net = null;
+    this.canvas = null;
+    this.video = null;
   }
 
   getCanvas = (ele: HTMLCanvasElement) => this.canvas = ele;
@@ -85,12 +97,17 @@ export default class PoseNet extends Component<Props, State> {
       throw 'Browser API navigator.mediaDevices.getUserMedia not available'
     }
 
+    if(this.video === null) {
+      console.log('this video is null!')
+      return;
+    }
+
     const { videoWidth, videoHeight } = this.props
     const video = this.video
     const mobile = isMobile()
 
-    video.width = videoWidth
-    video.height = videoHeight
+    // video.width = videoWidth
+    // video.height = videoHeight
 
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
@@ -113,6 +130,11 @@ export default class PoseNet extends Component<Props, State> {
   }
 
   detectPose = () => {
+    if(this.canvas === null) {
+      console.log('this canvas is null!')
+      return;
+    }
+
     const { videoWidth, videoHeight } = this.props
     const canvas = this.canvas
     const ctx = canvas.getContext('2d')
@@ -120,7 +142,7 @@ export default class PoseNet extends Component<Props, State> {
     canvas.width = videoWidth
     canvas.height = videoHeight
 
-    this.poseDetectionFrame(ctx)
+    this.poseDetectionFrame(ctx as CanvasRenderingContext2D)
   }
 
   poseDetectionFrame = (ctx: CanvasRenderingContext2D) => {
@@ -146,12 +168,14 @@ export default class PoseNet extends Component<Props, State> {
     const video = this.video
 
     const poseDetectionFrameInner = async () => {
+      if(net === null || video == null) return ;
+
       let poses: Pose[] = []
 
       switch (algorithm) {
         case 'single-pose':
           const pose = await net.estimateSinglePose(
-            video,
+            video as PosenetInput,
             {flipHorizontal: flipHorizontal}
           )
 
@@ -161,13 +185,11 @@ export default class PoseNet extends Component<Props, State> {
         case 'multi-pose':
 
           poses = await net.estimateMultiplePoses(
-            video,
-            imageScaleFactor,
-            flipHorizontal,
-            outputStride,
-            maxPoseDetections,
-            minPartConfidence,
-            nmsRadius
+            video as PosenetInput,
+            {
+              flipHorizontal: flipHorizontal,
+              maxDetections: maxPoseDetections
+            }
           )
 
           break
@@ -179,7 +201,7 @@ export default class PoseNet extends Component<Props, State> {
         ctx.save()
         ctx.scale(-1, 1)
         ctx.translate(-videoWidth, 0)
-        ctx.drawImage(video, 0, 0, videoWidth, videoHeight)
+        ctx.drawImage(video as CanvasImageSource, 0, 0, videoWidth, videoHeight)
         ctx.restore()
       }
 
@@ -194,6 +216,8 @@ export default class PoseNet extends Component<Props, State> {
           if (showSkeleton) {
             drawSkeleton(keypoints, minPartConfidence, skeletonColor, skeletonLineWidth, ctx);
           }
+          drawKeypoints(keypoints, minPartConfidence, skeletonColor, ctx);
+          drawSkeleton(keypoints, minPartConfidence, skeletonColor, skeletonLineWidth, ctx);
         }
       })
 
@@ -210,9 +234,11 @@ export default class PoseNet extends Component<Props, State> {
     return (
       <div className="PoseNet">
         { loading }
-        <video playsInline ref={ this.getVideo }></video>
-        <canvas ref={ this.getCanvas }></canvas>
+        <video playsInline ref={this.getVideo} />
+        <canvas ref={this.getCanvas} />
       </div>
     )
   }
 }
+
+export default PoseNet;
